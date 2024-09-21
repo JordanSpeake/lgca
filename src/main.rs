@@ -1,3 +1,4 @@
+use rand::prelude::*;
 use std::{fs::File, io::BufWriter};
 
 type Cell = u8;
@@ -52,11 +53,16 @@ impl Grid {
         y_min: isize,
         width: usize,
         height: usize,
-        _probability: f32,
+        probability: f64,
     ) {
         for y in y_min..y_min + height as isize {
             for x in x_min..x_min + width as isize {
-                let value = cell::FULL; // TODO, implement probability
+                let mut rng = thread_rng();
+                let n = rng.gen_bool(probability);
+                let s = rng.gen_bool(probability);
+                let e = rng.gen_bool(probability);
+                let w = rng.gen_bool(probability);
+                let value = (n as u8) << 3 | (s as u8) << 2 | (e as u8) << 1 | (w as u8);
                 self.set(x, y, value);
             }
         }
@@ -108,11 +114,12 @@ fn save_grid_as_image(grid: &Grid, filename: String) {
 }
 
 fn main() {
-    let width = 512;
-    let height = 512;
+    let width = 2048;
+    let height = 2048;
     let mut grid_a = Grid::new(width, height);
     let mut grid_b = Grid::new(width, height);
-    grid_a.fill_region(100, 200, 100, 200, 1.0);
+    grid_a.fill_region(0, 0, 2048, 2048, 0.25);
+    grid_a.fill_region(800, 800, 400, 400, 0.0);
 
     let frames = 500;
     for f in 0..frames {
