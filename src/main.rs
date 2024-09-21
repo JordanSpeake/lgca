@@ -6,8 +6,10 @@ struct Cell {
 }
 
 impl Cell {
-    pub fn new() -> Self {
-        Self { value: 0 }
+    const FULL: Self = Cell::new(0b00001111);
+
+    pub const fn new(value: u8) -> Self {
+        Self { value }
     }
 }
 
@@ -19,11 +21,32 @@ struct Grid {
 
 impl Grid {
     pub fn new(width: usize, height: usize) -> Self {
-        let grid = vec![Cell::new(); width * height];
+        let grid = vec![Cell::new(0); width * height];
         Self {
             grid,
             width,
             height,
+        }
+    }
+
+    pub fn set_cell(&mut self, x: usize, y: usize, value: Cell) {
+        let index = y * self.width + x;
+        self.grid[index] = value;
+    }
+
+    pub fn fill_region(
+        &mut self,
+        x_min: usize,
+        y_min: usize,
+        width: usize,
+        height: usize,
+        probability: f32,
+    ) {
+        for y in y_min..y_min + height {
+            for x in x_min..x_min + width {
+                let value = Cell::FULL; // Todo, implement probability
+                self.set_cell(x, y, value);
+            }
         }
     }
 }
@@ -31,7 +54,10 @@ impl Grid {
 fn generate_greyscale_sequence(grid: Grid) -> Vec<u8> {
     let mut out = Vec::new();
     for cell in grid.grid {
-        out.push(cell.value.count_ones() as u8);
+        let mask = 0b00001111;
+        let masked_value = cell.value & mask;
+        let bit_count = masked_value.count_ones();
+        out.push((63 * bit_count) as u8);
     }
     out
 }
@@ -39,7 +65,7 @@ fn generate_greyscale_sequence(grid: Grid) -> Vec<u8> {
 fn save_grid_as_image(grid: Grid) {
     let path = Path::new("image.png");
     let file = File::create(path).unwrap(); // TODO handle error
-    let ref mut writer = BufWriter::new(file);
+    let writer = &mut BufWriter::new(file);
     let mut encoder = png::Encoder::new(writer, grid.width as u32, grid.height as u32); // todo manually handle downcasting
     encoder.set_color(png::ColorType::Grayscale);
     encoder.set_depth(png::BitDepth::Eight);
@@ -51,6 +77,7 @@ fn save_grid_as_image(grid: Grid) {
 fn main() {
     let width = 8;
     let height = 8;
-    let grid = Grid::new(width, height);
+    let mut grid = Grid::new(width, height);
+    grid.fill_region(1, 2, 2, 3, 1.0);
     save_grid_as_image(grid);
 }
