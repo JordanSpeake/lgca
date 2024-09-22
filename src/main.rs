@@ -6,13 +6,39 @@ use std::{fs::File, io::BufWriter};
 type Cell = u8;
 
 mod cell {
-    pub const FULL: u8 = 0b00001111;
+    pub const FULL: u8 = 0b0000_1111;
     pub const UP: u8 = 0b0000_1000;
     pub const RIGHT: u8 = 0b0000_0100;
     pub const DOWN: u8 = 0b0000_0010;
     pub const LEFT: u8 = 0b0000_0001;
     pub const EMPTY: u8 = 0b0000_0000;
     pub const BOUNDARY: u8 = 0b0001_0000;
+}
+
+struct Config {
+    width: usize,
+    height: usize,
+    downscale: usize,
+    iterations: usize,
+    frameskip: usize,
+}
+
+impl Config {
+    pub fn new(
+        width: usize,
+        height: usize,
+        downscale: usize,
+        iterations: usize,
+        frameskip: usize,
+    ) -> Self {
+        Self {
+            width,
+            height,
+            downscale,
+            iterations,
+            frameskip,
+        }
+    }
 }
 
 struct RGB8 {
@@ -107,6 +133,26 @@ impl Grid {
     }
 }
 
+struct Source {
+    x: isize,
+    y: isize,
+    width: usize,
+    height: usize,
+    density: f64,
+}
+
+impl Source {
+    pub fn new(x: isize, y: isize, width: usize, height: usize, density: f64) -> Self {
+        Self {
+            x,
+            y,
+            width,
+            height,
+            density,
+        }
+    }
+}
+
 fn propagate_grid(grid: &Grid, next_grid: &mut Grid) {
     for y in 0..grid.height as isize {
         for x in 0..grid.width as isize {
@@ -191,42 +237,49 @@ fn save_grid_as_image(grid: &Grid, downscale: usize, filename: String) {
     writer.write_image_data(&image_data).unwrap(); // TODO handle error
 }
 
+fn update_sources(grid: &mut Grid, sources: &[Source]) {
+    for source in sources {
+        grid.fill_region(source.x, source.y, source.width, source.height, source.density);
+    }
+}
+
+fn tick(config: &Config, grid_a: &mut Grid, grid_b: &mut Grid, sources: &Vec<Source>, i: usize) {
+    update_sources(grid_a, sources);
+    propagate_grid(grid_a, grid_b);
+    std::mem::swap(grid_a, grid_b);
+    if i % config.frameskip == 0 {
+        save_grid_as_image(
+            &grid_a,
+            config.downscale,
+            format!("image{}.png", i / config.frameskip),
+        );
+    }
+    if i % 100 == 0 {
+        print!("\r{}", format!("frame:{}/{}", i, config.iterations));
+        stdout().flush().unwrap();
+    }
+}
+
+fn set_boundary_at_edge(grid: &mut Grid, config: &Config) {
+    grid.fill_boundary(0, 0, 1, config.height);
+    grid.fill_boundary(0, 0, config.width, 1);
+    grid.fill_boundary(0, config.height as isize - 1, config.width, 1);
+    grid.fill_boundary(config.width as isize - 1, 0, 1, config.height);
+}
+
 fn main() {
-    let width = 4096;
-    let height = 4096;
-    let downscale = 8;
-    let mut grid_a = Grid::new(width, height);
-    let mut grid_b = Grid::new(width, height);
-    // Features to add:
-    // -> sources and sinks
-    // -> load start state from a png?
-    // -> microphone?
+    let config = Config::new(4096, 4096, 8, 10_000, 10);
+    let mut grid_a = Grid::new(config.width, config.height);
+    let mut grid_b = Grid::new(config.width, config.height);
 
-    grid_a.fill_region(0, 0, width, height - 1, 0.75);
-    grid_a.fill_region(1024, 1024, 1024, 1024, 0.0);
+    grid_a.fill_region(0, 0, config.width, config.height - 1, 0.1);
+    set_boundary_at_edge(&mut grid_a, &config);
+    let mut sources = Vec::<Source>::new();
+    sources.push(Source::new(100, 100, 500, 500, 0.75));
+    sources.push(Source::new(3500, 3500, 500, 500, 0.00));
 
-    grid_a.fill_boundary(0, 0, 1, height);
-    grid_a.fill_boundary(0, 0, width, 1);
-    grid_a.fill_boundary(0, height as isize - 1, width, 1);
-    grid_a.fill_boundary(width as isize - 1, 0, 1, height);
-
-    save_grid_as_image(&grid_a, downscale, "image0.png".into());
-    let iterations = 10000;
-    let frameskip = 5;
-    let mut frame = 0;
-    for i in 1..=iterations {
-        propagate_grid(&grid_a, &mut grid_b);
-        std::mem::swap(&mut grid_a, &mut grid_b);
-        if i % frameskip == 0 {
-            save_grid_as_image(&grid_a, downscale, format!("image{}.png", frame));
-            frame += 1;
-        }
-        if i % 100 == 0 {
-            print!(
-                "\r{}",
-                format!("frame:{}/{}", frame, iterations / frameskip)
-            );
-            stdout().flush().unwrap();
-        }
+    save_grid_as_image(&grid_a, config.downscale, "image0.png".into());
+    for i in 1..=config.iterations {
+        tick(&config, &mut grid_a, &mut grid_b, &sources, i);
     }
 }
