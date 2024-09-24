@@ -1,7 +1,11 @@
 use rand::prelude::*;
-use std::io::{stdout, Write};
-use std::ops::AddAssign;
-use std::{fs::File, io::BufWriter};
+use core::time;
+use std::{
+    fs::File,
+    io::{stdout, BufWriter, Write},
+    ops::{AddAssign, RemAssign},
+    time::{Duration, Instant},
+};
 
 type Cell = u8;
 
@@ -131,6 +135,13 @@ impl Grid {
             }
         }
     }
+
+    pub fn set_boundary_at_edge(&mut self, config: &Config) {
+        self.fill_boundary(0, 0, 1, config.height);
+        self.fill_boundary(0, 0, config.width, 1);
+        self.fill_boundary(0, config.height as isize - 1, config.width, 1);
+        self.fill_boundary(config.width as isize - 1, 0, 1, config.height);
+    }
 }
 
 struct Source {
@@ -239,11 +250,24 @@ fn save_grid_as_image(grid: &Grid, downscale: usize, filename: String) {
 
 fn update_sources(grid: &mut Grid, sources: &[Source]) {
     for source in sources {
-        grid.fill_region(source.x, source.y, source.width, source.height, source.density);
+        grid.fill_region(
+            source.x,
+            source.y,
+            source.width,
+            source.height,
+            source.density,
+        );
     }
 }
 
-fn tick(config: &Config, grid_a: &mut Grid, grid_b: &mut Grid, sources: &Vec<Source>, i: usize) {
+fn tick(
+    config: &Config,
+    grid_a: &mut Grid,
+    grid_b: &mut Grid,
+    sources: &Vec<Source>,
+    start_time: Instant,
+    i: usize,
+) {
     update_sources(grid_a, sources);
     propagate_grid(grid_a, grid_b);
     std::mem::swap(grid_a, grid_b);
@@ -254,32 +278,32 @@ fn tick(config: &Config, grid_a: &mut Grid, grid_b: &mut Grid, sources: &Vec<Sou
             format!("image{}.png", i / config.frameskip),
         );
     }
-    if i % 100 == 0 {
-        print!("\r{}", format!("frame:{}/{}", i, config.iterations));
-        stdout().flush().unwrap();
-    }
-}
-
-fn set_boundary_at_edge(grid: &mut Grid, config: &Config) {
-    grid.fill_boundary(0, 0, 1, config.height);
-    grid.fill_boundary(0, 0, config.width, 1);
-    grid.fill_boundary(0, config.height as isize - 1, config.width, 1);
-    grid.fill_boundary(config.width as isize - 1, 0, 1, config.height);
+    let iterations_remaining = config.iterations - i;
+    let iterations_per_second = i as f64 / start_time.elapsed().as_secs_f64();
+    let time_remaining = iterations_remaining as f64 / iterations_per_second;
+    let hours = time_remaining as usize / 3600;
+    let minutes = (time_remaining as usize % 3600) / 60;
+    let seconds = time_remaining as usize % 60;
+    print!("\r\x1B[2K");
+    print!("step: {}/{} ", i, config.iterations);
+    print!("time remaining: {}hr {}min {}sec", hours, minutes, seconds);
+    stdout().flush().unwrap();
 }
 
 fn main() {
-    let config = Config::new(4096, 4096, 8, 10_000, 10);
+    let config = Config::new(4096, 4096, 8, 1000, 20);
     let mut grid_a = Grid::new(config.width, config.height);
     let mut grid_b = Grid::new(config.width, config.height);
 
-    grid_a.fill_region(0, 0, config.width, config.height - 1, 0.1);
-    set_boundary_at_edge(&mut grid_a, &config);
+    grid_a.fill_region(0, 0, config.width, config.height - 1, 0.25);
+    grid_a.set_boundary_at_edge(&config);
     let mut sources = Vec::<Source>::new();
     sources.push(Source::new(100, 100, 500, 500, 0.75));
     sources.push(Source::new(3500, 3500, 500, 500, 0.00));
 
     save_grid_as_image(&grid_a, config.downscale, "image0.png".into());
+    let start_time = Instant::now();
     for i in 1..=config.iterations {
-        tick(&config, &mut grid_a, &mut grid_b, &sources, i);
+        tick(&config, &mut grid_a, &mut grid_b, &sources, start_time, i);
     }
 }
