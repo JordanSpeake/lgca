@@ -75,8 +75,8 @@ fn generate_rgb_sequence(grid: &lgca::Grid, downscale: usize) -> Vec<u8> {
     out
 }
 
-fn save_grid_as_image(grid: &lgca::Grid, downscale: usize, filename: String) {
-    let file = File::create(filename).unwrap(); // TODO handle error
+fn save_grid_as_image(grid: &lgca::Grid, downscale: usize, filename: &String) {
+    let file = File::create(filename).expect(format!("Failed to create {}", filename).as_str());
     let writer = &mut BufWriter::new(file);
     let mut encoder = png::Encoder::new(
         writer,
@@ -85,9 +85,9 @@ fn save_grid_as_image(grid: &lgca::Grid, downscale: usize, filename: String) {
     );
     encoder.set_color(png::ColorType::Rgb);
     encoder.set_depth(png::BitDepth::Eight);
-    let mut writer = encoder.write_header().unwrap(); // TODO handle error
+    let mut writer = encoder.write_header().expect("Failed to create image writer");
     let image_data = generate_rgb_sequence(grid, downscale);
-    writer.write_image_data(&image_data).unwrap(); // TODO handle error
+    writer.write_image_data(&image_data).expect(format!("Failed to write to {}", filename).as_str());
 }
 
 fn update_sources(grid: &mut lgca::Grid, sources: &[lgca::Source]) {
@@ -117,7 +117,7 @@ fn tick(
         save_grid_as_image(
             &grid_a,
             config.downscale,
-            format!("image{}.png", i / config.frameskip),
+            &format!("image{}.png", i / config.frameskip),
         );
     }
     let iterations_remaining = config.iterations - i;
@@ -144,7 +144,7 @@ fn main() {
     sources.push(lgca::Source::new(100, 100, 500, 500, 0.75));
     // sources.push(Source::new(3500, 3500, 500, 500, 0.00));
 
-    save_grid_as_image(&grid_a, config.downscale, "image0.png".into());
+    save_grid_as_image(&grid_a, config.downscale, &"image0.png".into());
     let start_time = Instant::now();
     for i in 1..=config.iterations {
         tick(&config, &mut grid_a, &mut grid_b, &sources, start_time, i);
