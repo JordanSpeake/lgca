@@ -1,7 +1,56 @@
 #![allow(dead_code)]
 
-use std::ops::AddAssign;
 use rand::{thread_rng, Rng};
+use std::ops::AddAssign;
+
+pub enum Colouring {
+    /// Show density in black and white (brighter is denser)
+    DensityBW,
+    /// Shows direction of transport with hue, magnitude with value.
+    VelocityColour,
+}
+
+pub struct Block {
+    pub up: usize,
+    pub right: usize,
+    pub down: usize,
+    pub left: usize,
+    pub boundary: usize,
+    pub x: usize,
+    pub y: usize,
+    pub block_size: usize,
+}
+
+impl Block {
+    pub fn new(x: usize, y: usize, block_size: usize, grid: &Grid) -> Self {
+        let b = block_size;
+        let mut counter = [0 as usize; 5];
+        for cell_x in b * x..b * x + b {
+            for cell_y in b * y..b * y + b {
+                let mut cell_in_block = grid.get(cell_x as isize, cell_y as isize);
+                for i in 0..counter.len() {
+                    let bit = cell_in_block & 1;
+                    cell_in_block >>= 1;
+                    counter[i] += bit as usize;
+                }
+            }
+        }
+        Self {
+            up: counter[0],
+            right: counter[1],
+            down: counter[2],
+            left: counter[3],
+            boundary: counter[4],
+            x,
+            y,
+            block_size,
+        }
+    }
+
+    pub fn total_particles(self) -> usize {
+        self.up + self.right + self.down + self.left
+    }
+}
 
 pub type Cell = u8;
 
@@ -21,6 +70,7 @@ pub struct Config {
     pub downscale: usize,
     pub iterations: usize,
     pub frameskip: usize,
+    pub colouring: Colouring,
 }
 
 impl Config {
@@ -30,6 +80,7 @@ impl Config {
         downscale: usize,
         iterations: usize,
         frameskip: usize,
+        colouring: Colouring,
     ) -> Self {
         Self {
             width,
@@ -37,6 +88,7 @@ impl Config {
             downscale,
             iterations,
             frameskip,
+            colouring,
         }
     }
 }
@@ -57,6 +109,43 @@ impl RGB8 {
 
     pub fn as_array(self) -> [u8; 3] {
         [self.red, self.green, self.blue]
+    }
+
+    /// hue \[0,360] sat, value \[0, 1]
+    pub(crate) fn from_hsvf64(hue: f64, saturation: f64, value: f64) -> RGB8 {
+        let chroma = saturation * value;
+        let h_prime = hue / 60.0;
+        let x = chroma * (1.0 - f64::abs((h_prime % 2.0) - 1.0));
+        // let rgb = match h_prime as usize {
+        //     0 => (chroma, x, 0.0),
+        //     1 => (x, chroma, 0.0),
+        //     2 => (0.0, chroma, x),
+        //     3 => (0.0, x, chroma),
+        //     4 => (x, 0.0, chroma),
+        //     5 => (chroma, 0.0, x),
+        //     _ => panic!("h_prime value was unexpected D:")
+        // };
+        let rgb = if h_prime < 1.0 {
+            (chroma, x, 0.0)
+        } else if h_prime < 2.0 {
+            (x, chroma, 0.0)
+        } else if h_prime < 3.0 {
+            (0.0, chroma, x)
+        } else if h_prime < 4.0 {
+            (0.0, x, chroma)
+        } else if h_prime < 5.0 {
+            (x, 0.0, chroma)
+        } else if h_prime < 6.0 {
+            (chroma, 0.0, x)
+        } else {
+            (0.0, 0.0, 0.0)
+        };
+        let m = value - chroma;
+        RGB8::new(
+            ((rgb.0 + m) * 255.0) as u8,
+            ((rgb.1 + m) * 255.0) as u8,
+            ((rgb.2 + m) * 255.0) as u8,
+        )
     }
 }
 

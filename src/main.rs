@@ -1,12 +1,14 @@
 use std::{
+    f64::consts::PI,
     fs::File,
     io::{stdout, BufWriter, Write},
     time::Instant,
 };
+
 mod lgca;
+use lgca::*;
 
-
-fn propagate_grid(grid: &lgca::Grid, next_grid: &mut lgca::Grid) {
+fn propagate_grid(grid: &Grid, next_grid: &mut Grid) {
     for y in 0..grid.height as isize {
         for x in 0..grid.width as isize {
             let up = grid.get(x, y + 1) & lgca::cell::DOWN;
@@ -36,38 +38,46 @@ fn resolve_collisions(cell_value: u8) -> u8 {
     }
 }
 
-fn count_particles_in_block(
-    grid: &lgca::Grid,
-    block_x: usize,
-    block_y: usize,
-    downscale: usize,
-) -> Option<usize> {
-    let mut particles = 0;
-    for cell_x in downscale * block_x..downscale * block_x + downscale - 1 {
-        for cell_y in downscale * block_y..downscale * block_y + downscale - 1 {
-            let cell_in_block = grid.get(cell_x as isize, cell_y as isize);
-            if cell_in_block & lgca::cell::BOUNDARY != 0 {
-                return None;
-            } else {
-                let masked_value = cell_in_block & lgca::cell::FULL;
-                particles += masked_value.count_ones() as usize;
-            }
-        }
+fn block_colour_density_bw(block_x: usize, block_y: usize, grid: &Grid, config: &Config) -> RGB8 {
+    let block = lgca::Block::new(block_x, block_y, config.downscale, grid);
+    if block.boundary > 0 {
+        lgca::RGB8::BOUNDARY
+    } else {
+        let val = (63 * block.total_particles() / (config.downscale * config.downscale)) as u8;
+        lgca::RGB8::new(val, val, val)
     }
-    Some(particles)
 }
 
-fn generate_rgb_sequence(grid: &lgca::Grid, downscale: usize) -> Vec<u8> {
+fn block_colour_velocity_rgb(block_x: usize, block_y: usize, grid: &Grid, config: &Config) -> RGB8 {
+    let block = lgca::Block::new(block_x, block_y, config.downscale, grid);
+    if block.boundary > 0 {
+        lgca::RGB8::BOUNDARY
+    } else {
+        let x: f64 =
+            (block.right as f64 - block.left as f64) / (config.downscale * config.downscale) as f64;
+        let y: f64 = (block.up as f64 - block.down as f64) / (config.downscale * config.downscale) as f64;
+        let speed = f64::powf(f64::sqrt((x * x) + (y * y))/f64::sqrt(2.0), 1.0/3.0);
+        let mut angle = f64::atan2(x, y);
+        angle = if angle < 0.0 {
+            angle + 2.0*PI
+        } else {
+            angle
+        };
+        angle = 180.0*angle/PI;
+        // println!("speed: {} \n angle: {}", speed, angle);
+        lgca::RGB8::from_hsvf64(angle, speed, speed)
+    }
+}
+
+fn generate_rgb_sequence(grid: &Grid, config: &Config) -> Vec<u8> {
     let mut out = Vec::<u8>::new();
-    for block_x in 0..grid.width / downscale {
-        for block_y in 0..grid.height / downscale {
-            let particles_in_block = count_particles_in_block(grid, block_x, block_y, downscale);
-            let block_colour = match particles_in_block {
-                Some(count) => {
-                    let val = (63 * count / (downscale * downscale)) as u8;
-                    lgca::RGB8::new(val, val, val)
+    for block_x in 0..grid.width / config.downscale {
+        for block_y in 0..grid.height / config.downscale {
+            let block_colour = match config.colouring {
+                Colouring::DensityBW => block_colour_density_bw(block_x, block_y, grid, config),
+                Colouring::VelocityColour => {
+                    block_colour_velocity_rgb(block_x, block_y, grid, config)
                 }
-                None => lgca::RGB8::BOUNDARY,
             };
             out.extend(block_colour.as_array());
         }
@@ -75,19 +85,23 @@ fn generate_rgb_sequence(grid: &lgca::Grid, downscale: usize) -> Vec<u8> {
     out
 }
 
-fn save_grid_as_image(grid: &lgca::Grid, downscale: usize, filename: &String) {
-    let file = File::create(filename).expect(format!("Failed to create {}", filename).as_str());
+fn save_grid_as_image(grid: &Grid, config: &Config, filename: &str) {
+    let file = File::create(filename).unwrap(); // TODO handle error
     let writer = &mut BufWriter::new(file);
     let mut encoder = png::Encoder::new(
         writer,
-        (grid.width / downscale) as u32,
-        (grid.height / downscale) as u32,
+        (grid.width / config.downscale) as u32,
+        (grid.height / config.downscale) as u32,
     );
     encoder.set_color(png::ColorType::Rgb);
     encoder.set_depth(png::BitDepth::Eight);
-    let mut writer = encoder.write_header().expect("Failed to create image writer");
-    let image_data = generate_rgb_sequence(grid, downscale);
-    writer.write_image_data(&image_data).expect(format!("Failed to write to {}", filename).as_str());
+    let mut writer = encoder
+        .write_header()
+        .expect("Failed to create image writer");
+    let image_data = generate_rgb_sequence(grid, config);
+    writer
+        .write_image_data(&image_data)
+        .expect(format!("Failed to write to {}", filename).as_str());
 }
 
 fn update_sources(grid: &mut lgca::Grid, sources: &[lgca::Source]) {
@@ -116,11 +130,11 @@ fn tick(
     if i % config.frameskip == 0 {
         save_grid_as_image(
             &grid_a,
-            config.downscale,
-            &format!("image{}.png", i / config.frameskip),
+            config,
+            &format!("output/image{}.png", i / config.frameskip),
         );
     }
-    let iterations_remaining = config.iterations - i;
+    let iterations_remaining = config.iterations - i + 1;
     let iterations_per_second = i as f64 / start_time.elapsed().as_secs_f64();
     let time_remaining = iterations_remaining as f64 / iterations_per_second;
     let hours = time_remaining as usize / 3600;
@@ -133,18 +147,17 @@ fn tick(
 }
 
 fn main() {
-    // let config = Config::new(4096, 4096, 8, 1000, 20);
-    let config = lgca::Config::new(2048, 2048, 8, 1000, 20);
-    let mut grid_a = lgca::Grid::new(config.width, config.height);
-    let mut grid_b = lgca::Grid::new(config.width, config.height);
-
+    let config = lgca::Config::new(8192, 8192, 16, 20_000, 20, Colouring::VelocityColour);
+    let mut grid_a = Grid::new(config.width, config.height);
+    let mut grid_b = Grid::new(config.width, config.height);
     grid_a.fill_region(0, 0, config.width, config.height - 1, 0.25);
     grid_a.set_boundary_at_edge(&config);
+    grid_a.fill_region(3072, 3072, 2048, 2048, 1.0);
     let mut sources = Vec::<lgca::Source>::new();
-    sources.push(lgca::Source::new(100, 100, 500, 500, 0.75));
+    // sources.push(lgca::Source::new(100, 100, 500, 500, 0.75));
     // sources.push(Source::new(3500, 3500, 500, 500, 0.00));
 
-    save_grid_as_image(&grid_a, config.downscale, &"image0.png".into());
+    save_grid_as_image(&grid_a, &config, "output/image0.png".into());
     let start_time = Instant::now();
     for i in 1..=config.iterations {
         tick(&config, &mut grid_a, &mut grid_b, &sources, start_time, i);
