@@ -24,14 +24,14 @@ pub struct Block {
 impl Block {
     pub fn new(x: usize, y: usize, block_size: usize, grid: &Grid) -> Self {
         let b = block_size;
-        let mut counter = [0 as usize; 5];
+        let mut counter = [0; 5];
         for cell_x in b * x..b * x + b {
             for cell_y in b * y..b * y + b {
                 let mut cell_in_block = grid.get(cell_x as isize, cell_y as isize);
-                for i in 0..counter.len() {
+                for value in &mut counter {
                     let bit = cell_in_block & 1;
                     cell_in_block >>= 1;
-                    counter[i] += bit as usize;
+                    *value += bit as usize;
                 }
             }
         }
@@ -107,7 +107,7 @@ impl RGB8 {
         Self { red, green, blue }
     }
 
-    pub fn as_array(self) -> [u8; 3] {
+    pub fn into_array(self) -> [u8; 3] {
         [self.red, self.green, self.blue]
     }
 
