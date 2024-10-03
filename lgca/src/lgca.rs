@@ -1,13 +1,29 @@
 #![allow(dead_code)]
 
 use rand::{thread_rng, Rng};
-use std::ops::AddAssign;
+use std::{fmt::Display, ops::AddAssign};
 
+#[derive(Clone, Copy)]
 pub enum Colouring {
     /// Show density in black and white (brighter is denser)
     DensityBW,
     /// Shows direction of transport with hue, magnitude with value.
     VelocityColour,
+}
+
+impl Display for Colouring {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.to_str())
+    }
+}
+
+impl Colouring {
+    pub fn to_str(self) -> &'static str {
+        match self {
+            Self::DensityBW => "density",
+            Self::VelocityColour => "velocity",
+        }
+    }
 }
 
 pub struct Block {
@@ -70,7 +86,7 @@ pub struct Config {
     pub downscale: usize,
     pub iterations: usize,
     pub frameskip: usize,
-    pub colouring: Colouring,
+    pub colouring: Vec<Colouring>,
 }
 
 impl Config {
@@ -80,7 +96,7 @@ impl Config {
         downscale: usize,
         iterations: usize,
         frameskip: usize,
-        colouring: Colouring,
+        colouring: Vec<Colouring>,
     ) -> Self {
         Self {
             width,
